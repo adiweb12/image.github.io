@@ -110,6 +110,18 @@ movie_base/
 
 ## 🌐 Deploy on Render
 
+### PostgreSQL setup (IMPORTANT)
+
+1. In Render dashboard → **New → PostgreSQL** → create a free DB
+2. Copy the **"Internal Database URL"** (not external — internal is free and faster)
+3. It looks like: `postgresql://user:pass@dpg-xxxxxxx.oregon-postgres.render.com/movie_base`
+4. Paste it as `DATABASE_URL` in your Web Service's environment variables
+
+> **Note:** If your URL starts with `postgres://` that is fine — the app converts it automatically.
+> Render PostgreSQL requires SSL — this is handled automatically.
+
+## 🌐 Deploy on Render (Web Service)
+
 1. Create new **Web Service** → connect your repo
 2. **Build Command:** `pip install -r requirements.txt`
 3. **Start Command:** `uvicorn main:app --host 0.0.0.0 --port $PORT`
