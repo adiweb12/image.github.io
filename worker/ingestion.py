@@ -25,7 +25,7 @@ MAX_JOB_SECONDS = 600  # 10-minute global timeout per full sync
 
 # ── Validation ──────────────────────────────────────────────────────────
 
-RELEASED_CUTOFF_STR = "2025-12-01"  # only include movies from Dec 2025 onwards
+# No date cutoff — scraper targets 2025+ years
 
 def _is_valid(movie: dict) -> bool:
     """Return True if movie data passes basic validation."""
@@ -55,22 +55,7 @@ def _is_valid(movie: dict) -> bool:
     if any(p in wiki_url for p in person_url_patterns):
         return False
 
-    # Date filter: only include upcoming OR released from Dec 2025 onwards
-    release_date = movie.get("release_date")
-    release_type = (movie.get("release_type") or "released").lower()
-
-    if release_type == "upcoming":
-        return True  # always include upcoming
-
-    if release_date:
-        try:
-            rd = datetime.datetime.strptime(release_date[:10], "%Y-%m-%d").date()
-            cutoff = datetime.date(2025, 12, 1)
-            if rd < cutoff:
-                return False  # too old — skip
-        except (ValueError, TypeError):
-            pass  # can't parse date — include it anyway
-
+    # No date cutoff — scraper already targets 2025+ years only
     return True
 
 
@@ -114,6 +99,7 @@ def _ensure_poster(movie: dict) -> Optional[str]:
         language=movie["language"],
         wiki_url=wiki_url,
         existing_wiki_image=existing,
+        is_upcoming=(movie.get("release_type","") == "upcoming"),
     )
     if not raw_url:
         return None

@@ -249,17 +249,45 @@ def scrape_language(language: str, years: list = None, fetch_details: bool = Tru
                     href = link.get("href", "")
                     if any(x in href for x in SKIP_HREF):
                         continue
-                    raw = link.get_text(strip=True)
+
+                    # ── Strong person-page filter ──────────────────────
+                    # Film pages: href like /wiki/Movie_Name or /wiki/Movie_Name_(film)
+                    # Person pages: /wiki/Person_Name_(actor), /wiki/Firstname_Lastname
+                    href_lower = href.lower()
+                    person_signals = [
+                        "_(actor)", "_(actress)", "_(director)", "_(singer)",
+                        "_(musician)", "_(politician)", "_(cricketer)", "_(footballer)",
+                        "_(born_", "_(comedian)", "_(model)", "_(television",
+                    ]
+                    if any(p in href_lower for p in person_signals):
+                        continue
+
+                    raw   = link.get_text(strip=True)
                     title = _clean_title(raw)
-                    # Skip very short titles and obvious non-film entries
                     if len(title) < 2:
                         continue
-                    # Skip entries that look like a person's name with no wiki page
-                    # (film titles rarely have common name suffixes)
-                    if any(title.lower().endswith(s) for s in [
-                        " actor", " actress", " director", " producer", " singer"
+
+                    # Film titles never end with these words
+                    title_lower = title.lower()
+                    if any(title_lower.endswith(s) for s in [
+                        " actor", " actress", " director", " producer",
+                        " singer", " dancer", " comedian",
                     ]):
                         continue
+
+                    # Skip if title looks like a person name (First Last with no other words)
+                    # Simple heuristic: 2 words, both Title Case, no articles/prepositions
+                    words = title.split()
+                    common_articles = {'the','a','an','of','and','in','on','at','is','for','to'}
+                    if (len(words)==2 and
+                        all(w[0].isupper() for w in words if w) and
+                        not any(w.lower() in common_articles for w in words) and
+                        '(' not in title and ':' not in title):
+                        # Could be a person name — check if href has no film indicator
+                        has_film_hint = any(x in href_lower for x in ['film','movie','_(20'])
+                        if not has_film_hint:
+                            continue  # likely a person, skip
+
                     scraped_titles.append((title, f"{WIKI_BASE}{href}"))
 
             # Method 2: numbered/bulleted lists (some year pages use this format)

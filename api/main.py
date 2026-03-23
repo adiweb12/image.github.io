@@ -99,20 +99,8 @@ def movie_count(language: Optional[str] = Query(None),
 # ── Cleanup: remove actor/person records ─────────────────────────────────
 @app.post("/cleanup/old", tags=["admin"])
 def cleanup_old_movies(db: Session = Depends(get_db), _=Depends(verify_api_key)):
-    """Remove released movies older than Dec 1 2025."""
-    from sqlalchemy import and_
-    deleted = (
-        db.query(MovieDB)
-        .filter(
-            MovieDB.release_type == "released",
-            MovieDB.release_date != None,
-            MovieDB.release_date < "2025-12-01",
-        )
-        .delete(synchronize_session=False)
-    )
-    db.commit()
-    logger.info(f"✅ Removed {deleted} old movies (before Dec 2025)")
-    return {"deleted": deleted}
+    """No-op: date filtering removed. Returns 0."""
+    return {"deleted": 0, "note": "Date filter removed — all scraped movies are kept"}
 
 
 @app.post("/cleanup/actors", tags=["admin"])
@@ -270,6 +258,166 @@ async def sync_details_now(
 
     return {"language": language, "enriched": done,
             "errors": errors[:5], "elapsed": round(time.time()-start, 1)}
+
+
+# ── Stats endpoint (fast — single DB query) ─────────────────────────────
+@app.get("/movies/stats", tags=["movies"])
+async def movie_stats(db: Session = Depends(get_db), _=Depends(verify_api_key)):
+    """All stats in one query — used by admin panel dashboard."""
+    from sqlalchemy import func, case
+    rows = db.query(
+        func.count(MovieDB.id).label("total"),
+        func.count(case((MovieDB.poster != None, 1))).label("with_poster"),
+        func.count(case((MovieDB.poster.like("%cloudinary%"), 1))).label("cloudinary"),
+        func.count(case((MovieDB.release_type == "upcoming", 1))).label("upcoming"),
+        func.count(case((MovieDB.poster_synced == True, 1))).label("synced"),
+    ).first()
+
+    # Per-language breakdown
+    lang_rows = db.execute(
+        __import__("sqlalchemy").text("""
+            SELECT language,
+                   COUNT(*) as total,
+                   COUNT(CASE WHEN poster IS NOT NULL THEN 1 END) as with_poster,
+                   COUNT(CASE WHEN poster LIKE '%%cloudinary%%' THEN 1 END) as cloudinary
+            FROM movies
+            GROUP BY language
+            ORDER BY total DESC
+        """)
+    ).fetchall()
+
+    return {
+        "total":      rows.total      if rows else 0,
+        "with_poster":rows.with_poster if rows else 0,
+        "cloudinary": rows.cloudinary  if rows else 0,
+        "upcoming":   rows.upcoming    if rows else 0,
+        "synced":     rows.synced      if rows else 0,
+        "by_language": [
+            {"language": r.language, "total": r.total,
+             "with_poster": r.with_poster, "cloudinary": r.cloudinary}
+            for r in lang_rows
+        ],
+    }
+
+
+# ── SSE: live sync progress ───────────────────────────────────────────────
+import asyncio
+from fastapi.responses import StreamingResponse
+
+_sync_log_queue: list = []   # simple in-memory log buffer
+
+def _push_log(msg: str):
+    """Push a log message to the SSE buffer (keep last 200)."""
+    _sync_log_queue.append(msg)
+    if len(_sync_log_queue) > 200:
+        _sync_log_queue.pop(0)
+
+@app.get("/admin/sync-stream", tags=["admin"])
+async def sync_stream(request: Request, access_token: str = Query("")):
+    """SSE stream — accepts key as query param since EventSource cannot set headers."""
+    if not access_token or not __import__("hmac").compare_digest(access_token.encode(), API_KEY.encode()):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    """Server-Sent Events stream for live sync progress."""
+    async def event_gen():
+        last = len(_sync_log_queue)
+        # Send existing buffer first
+        for msg in _sync_log_queue:
+            yield f"data: {msg}\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+            if len(_sync_log_queue) > last:
+                for msg in _sync_log_queue[last:]:
+                    yield f"data: {msg}\n\n"
+                last = len(_sync_log_queue)
+            await asyncio.sleep(1)
+    return StreamingResponse(event_gen(), media_type="text/event-stream",
+                              headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+
+# ── Sync ALL languages at once ────────────────────────────────────────────
+@app.post("/sync/all", tags=["admin"])
+async def sync_all_languages(
+    background_tasks: BackgroundTasks,
+    skip_posters: bool = Query(False),
+    _=Depends(verify_api_key),
+):
+    """Scrape + enrich + upload posters for ALL languages in background."""
+    from worker.ingestion import run_sync
+    background_tasks.add_task(_sync_all_with_log, skip_posters)
+    return SyncResponse(status="started", message="Full sync started for all languages. Watch /admin/sync-stream for live progress.")
+
+
+async def _sync_all_with_log(skip_posters: bool):
+    import asyncio
+    from scrapers.wiki_scraper import WIKI_LIST_PAGES
+    from worker.ingestion import run_sync
+    langs = list(WIKI_LIST_PAGES.keys())
+    _push_log(f"🚀 Starting full sync for: {', '.join(langs)}")
+    try:
+        # Patch logger to also push to SSE
+        import logging
+        class SSEHandler(logging.Handler):
+            def emit(self, record):
+                msg = self.format(record)
+                _push_log(msg)
+        handler = SSEHandler()
+        handler.setLevel(logging.INFO)
+        root_logger = logging.getLogger()
+        root_logger.addHandler(handler)
+
+        await asyncio.get_event_loop().run_in_executor(
+            None, lambda: run_sync(langs, None, skip_posters)
+        )
+        _push_log("✅ Full sync complete!")
+        root_logger.removeHandler(handler)
+    except Exception as e:
+        _push_log(f"❌ Sync error: {e}")
+
+
+# ── SSE: Live log streaming ──────────────────────────────────────────────
+import asyncio
+import queue as _queue
+from fastapi.responses import StreamingResponse
+
+_log_queue: _queue.Queue = _queue.Queue(maxsize=500)
+
+class _QueueHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            _log_queue.put_nowait(self.format(record))
+        except _queue.Full:
+            pass
+
+# Attach queue handler to root logger
+_qh = _QueueHandler()
+_qh.setLevel(logging.INFO)
+logging.getLogger().addHandler(_qh)
+
+
+@app.get("/admin/log-stream", tags=["admin"])
+async def log_stream(request: Request, key: str = ""):
+    """Server-Sent Events — streams live log to admin panel."""
+    import hmac
+    if not key or not hmac.compare_digest(key.encode(), API_KEY.encode()):
+        raise HTTPException(status_code=403)
+
+    async def generate():
+        yield "data: connected\n\n"
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                msg = _log_queue.get_nowait()
+                # Classify log level for colour coding
+                level = "ok" if "[INFO]" in msg else "warn" if "[WARNING]" in msg else "err" if "[ERROR]" in msg else "info"
+                yield f"data: {level}|{msg}\n\n"
+            except _queue.Empty:
+                yield "data: ping\n\n"
+                await asyncio.sleep(1)
+
+    return StreamingResponse(generate(), media_type="text/event-stream",
+        headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
 
 # ── Admin Panel HTML ─────────────────────────────────────────────────────

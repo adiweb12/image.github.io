@@ -395,16 +395,57 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <!-- ── Scraper & Sync ── -->
     <div id="panel-sync" class="panel">
       <div class="page-hd"><h1><i class="fas fa-rotate"></i> Scraper & Sync</h1></div>
+
+      <!-- Sync All button + live log -->
+      <div class="section" style="border-color:rgba(229,41,62,.3);background:rgba(229,41,62,.04)">
+        <h2><i class="fas fa-globe"></i> Full Sync — All Languages</h2>
+        <p style="font-size:.83rem;color:var(--txt2);margin-bottom:14px">
+          Scrapes Wikipedia for all 5 languages, enriches details, and uploads posters to Cloudinary.
+          Includes upcoming movies with aggressive poster search (Filmibeat + Google fallback).
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+          <button class="btn btn-red" id="syncAllBtn" onclick="syncAllLanguages(false)">
+            <i class="fas fa-play"></i> Sync All Languages
+          </button>
+          <button class="btn btn-ghost" onclick="syncAllLanguages(true)">
+            <i class="fas fa-bolt"></i> Sync All (Skip Posters)
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="clearSyncLog()">
+            <i class="fas fa-trash"></i> Clear Log
+          </button>
+        </div>
+        <!-- Live SSE log -->
+        <div class="log-wrap" id="liveLog" style="height:220px">
+          <div class="log-line" style="color:var(--txt3)">Click "Sync All Languages" to start. Live progress will appear here.</div>
+        </div>
+      </div>
+
+      <!-- Live log stream -->
+      <div class="section" style="margin-bottom:20px">
+        <h2><i class="fas fa-terminal"></i> Live Log
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="toggleLiveLog()" id="liveLogBtn">
+            <i class="fas fa-play"></i> Start Live Log
+          </button>
+        </h2>
+        <div id="liveLog" class="log-wrap" style="height:200px">
+          <div style="color:var(--txt3);font-size:.78rem">Click "Start Live Log" to stream real-time logs from movie_base…</div>
+        </div>
+      </div>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="section">
-          <h2><i class="fas fa-spider"></i> Scrape by Language</h2>
+          <h2><i class="fas fa-spider"></i> Scrape Movies</h2>
           <div class="fg">
             <label>Language</label>
             <select id="scrapeLanguage">
+              <option value="all">🌐 All Languages</option>
               <option>Malayalam</option><option>Tamil</option><option>Telugu</option><option>Kannada</option><option>Hindi</option>
             </select>
           </div>
-          <button class="btn btn-red" onclick="runScrape()"><i class="fas fa-play"></i> Start Scrape</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-red" onclick="runScrape()"><i class="fas fa-play"></i> Start Scrape</button>
+            <button class="btn btn-ghost btn-sm" onclick="runScrapeAll()"><i class="fas fa-globe"></i> All Languages</button>
+          </div>
           <div id="scrapeResult" class="log-wrap" style="margin-top:12px;display:none"></div>
         </div>
         <div class="section">
@@ -441,7 +482,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
             <a id="exportLink" href="#" class="btn btn-ghost btn-sm" onclick="exportDB()"><i class="fas fa-download"></i> Export JSON</a>
           </div>
         </div>
-      </div>
+      </div><!-- end grid -->
     </div>
 
   </main>
@@ -470,6 +511,7 @@ async function doLogin() {
     document.getElementById('authGate').style.display = 'none';
     document.getElementById('app').style.display      = 'flex';
     loadDashboard();
+    startDashAutoRefresh();
   } catch(e) { showAuthErr(e.message); }
 }
 function showAuthErr(msg) {
@@ -485,6 +527,8 @@ function showPanel(id, btn) {
   document.querySelectorAll('.sb-link').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
+  // Stop live refresh when leaving dashboard
+  if(id!=='dashboard' && _statsInterval){ clearInterval(_statsInterval); _statsInterval=null; }
   if(id==='dashboard') loadDashboard();
   if(id==='movies')    loadMovies();
   if(id==='images')    loadImageStats();
@@ -503,45 +547,55 @@ async function apiPost(path) {
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────
+let _statsInterval = null;
+
 async function loadDashboard() {
-  // Health
-  const h = await fetch(`${API_BASE}/health`).then(r=>r.json()).catch(()=>({}));
-  document.getElementById('healthInfo').innerHTML = `
-    <b style="color:${h.status==='ok'?'var(--green)':'var(--red)'}">● ${h.status || 'unknown'}</b>
-    &nbsp;·&nbsp; DB: ${h.db || '?'}
-    &nbsp;·&nbsp; Last sync: ${h.last_sync ? new Date(h.last_sync).toLocaleString() : 'Never'}
-  `;
-
-  // Stats
-  const count  = await fetch(`${API_BASE}/movies/count`, {headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>({}));
-  const total  = count.count || 0;
-  document.getElementById('statTotal').textContent = total;
-
-  // Pull a sample to calculate poster stats
-  let withImg=0, cloudinary=0, upcoming=0;
-  let skip=0;
-  while(true) {
-    const page = await fetch(`${API_BASE}/movies?skip=${skip}&limit=100`,{headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>[]);
-    if(!Array.isArray(page)||!page.length) break;
-    page.forEach(m => {
-      if(m.poster) withImg++;
-      if(m.poster && m.poster.includes('cloudinary')) cloudinary++;
-      if(m.release_type==='upcoming') upcoming++;
-    });
-    skip+=100;
-    if(page.length<100) break;
-  }
-  document.getElementById('statWithImg').textContent    = withImg;
-  document.getElementById('statCloudinary').textContent = cloudinary;
-  document.getElementById('statUpcoming').textContent   = upcoming;
-
-  const pct = total ? Math.round(cloudinary/total*100) : 0;
-  document.getElementById('posterProgress').innerHTML = `
-    <div class="prog-label"><span>Cloudinary posters: ${cloudinary} / ${total}</span><span>${pct}%</span></div>
-    <div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
-    <p style="font-size:.75rem;color:var(--txt3);margin-top:6px">Missing: ${total-withImg} movies have no poster · Wikimedia (not Cloudinary): ${withImg-cloudinary}</p>
-  `;
+  await refreshStats();
+  if(_statsInterval) clearInterval(_statsInterval);
+  _statsInterval = setInterval(refreshStats, 8000);
 }
+
+async function refreshStats() {
+  try {
+    const [h, s] = await Promise.all([
+      fetch(`${API_BASE}/health`).then(r=>r.json()).catch(()=>({})),
+      fetch(`${API_BASE}/movies/stats`,{headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>({})),
+    ]);
+    document.getElementById('healthInfo').innerHTML = `
+      <b style="color:${h.status==='ok'?'var(--green)':'var(--red)'}">● ${h.status||'unknown'}</b>
+      &nbsp;·&nbsp; DB: ${h.db||'?'}
+      &nbsp;·&nbsp; Last sync: ${h.last_sync ? new Date(h.last_sync).toLocaleString() : 'Never'}
+      <small style="color:var(--txt3);margin-left:8px">↻ live</small>
+    `;
+    const total=s.total||0, withImg=s.with_poster||0, cloudinary=s.cloudinary||0, upcoming=s.upcoming||0;
+    document.getElementById('statTotal').textContent     = total;
+    document.getElementById('statWithImg').textContent   = withImg;
+    document.getElementById('statCloudinary').textContent= cloudinary;
+    document.getElementById('statUpcoming').textContent  = upcoming;
+    const pct = total ? Math.round(cloudinary/total*100) : 0;
+    let html = `
+      <div class="prog-label"><span>Cloudinary: ${cloudinary} / ${total}</span><span><b>${pct}%</b></span></div>
+      <div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+      <p style="font-size:.75rem;color:var(--txt3);margin-top:6px">No poster: ${total-withImg} · External URL: ${withImg-cloudinary}</p>
+    `;
+    if(s.by_language?.length){
+      html += '<div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">';
+      s.by_language.forEach(l=>{
+        const p=l.total?Math.round(l.cloudinary/l.total*100):0;
+        html+=`<div style="background:var(--bg4);border-radius:8px;padding:12px">
+          <div style="font-size:.78rem;font-weight:600;margin-bottom:6px">${l.language} <span style="color:var(--txt3)">(${l.total})</span></div>
+          <div class="prog-label"><span>${l.cloudinary}✓</span><span>${p}%</span></div>
+          <div class="prog-wrap"><div class="prog-bar" style="width:${p}%"></div></div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    document.getElementById('posterProgress').innerHTML = html;
+  } catch(e) {
+    document.getElementById('healthInfo').innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+  }
+}
+
 
 // ── Movies list ───────────────────────────────────────────────────────────
 async function loadMovies() {
@@ -874,6 +928,61 @@ async function runCleanup(type) {
   } catch(e) { el.innerHTML=`<div class="log-line log-err">❌ ${e.message}</div>`; }
 }
 
+// ── Sync All ──────────────────────────────────────────────────────────────
+let _sseSource = null;
+
+async function syncAllLanguages(skipPosters=false) {
+  const btn = document.getElementById('syncAllBtn');
+  const log = document.getElementById('syncAllLog');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting…';
+  log.style.display = 'block';
+  log.innerHTML = '<div class="log-line log-warn">🚀 Starting full sync…</div>';
+
+  try {
+    const r = await fetch(`${API_BASE}/sync/all?skip_posters=${skipPosters}`, {
+      method:'POST', headers:{'access_token':API_KEY,'Content-Length':'0'}
+    });
+    const d = await r.json();
+    log.innerHTML += `<div class="log-line log-ok">✅ ${d.message}</div>`;
+    // Auto-start SSE to watch progress
+    startSSE();
+  } catch(e) {
+    log.innerHTML += `<div class="log-line log-err">❌ ${e.message}</div>`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-globe"></i> Sync All Languages';
+}
+
+function toggleSSE(){
+  if(_sseSource) stopSSE();
+  else startSSE();
+}
+
+function startSSE(){
+  if(_sseSource) return;
+  const log = document.getElementById('syncAllLog');
+  log.style.display = 'block';
+  log.innerHTML += '<div class="log-line" style="color:var(--blue)">📡 Connected to live log stream…</div>';
+  _sseSource = new EventSource(`${API_BASE}/admin/sync-stream?access_token=${encodeURIComponent(API_KEY)}`);
+  _sseSource.onmessage = e => {
+    const line = document.createElement('div');
+    line.className = 'log-line ' + (e.data.includes('❌')||e.data.includes('ERROR')?'log-err':e.data.includes('⚠️')?'log-warn':'log-ok');
+    line.textContent = e.data;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  };
+  _sseSource.onerror = ()=>{ stopSSE(); };
+  document.getElementById('sseBtn').innerHTML = '<i class="fas fa-stop"></i> Stop Live Log';
+  document.getElementById('sseBtn').style.borderColor='var(--red)';
+}
+
+function stopSSE(){
+  if(_sseSource){ _sseSource.close(); _sseSource=null; }
+  document.getElementById('sseBtn').innerHTML = '<i class="fas fa-tower-broadcast"></i> Live Log';
+  document.getElementById('sseBtn').style.borderColor='';
+}
+
 function exportDB() {
   const a = document.getElementById('exportLink');
   // Open in new tab with auth header isn't possible for downloads
@@ -882,9 +991,140 @@ function exportDB() {
   return false;
 }
 
+// ── Live Log (SSE) ───────────────────────────────────────────────────────
+let _liveLogSource = null;
+function toggleLiveLog() {
+  const btn = document.getElementById('liveLogBtn');
+  const log = document.getElementById('liveLog');
+  if (_liveLogSource) {
+    _liveLogSource.close();
+    _liveLogSource = null;
+    btn.innerHTML = '<i class="fas fa-play"></i> Start Live Log';
+    addLog(log, 'warn', 'Disconnected from live log');
+    return;
+  }
+  log.innerHTML = '';
+  btn.innerHTML = '<i class="fas fa-circle" style="color:var(--red);animation:pulse 1s infinite"></i> Live';
+  const url = `${API_BASE}/admin/log-stream?key=${encodeURIComponent(API_KEY)}`;
+  _liveLogSource = new EventSource(url);
+  _liveLogSource.onmessage = e => {
+    if (e.data === 'ping' || e.data === 'connected') return;
+    const [level, ...parts] = e.data.split('|');
+    addLog(log, level, parts.join('|'));
+    log.scrollTop = log.scrollHeight;
+  };
+  _liveLogSource.onerror = () => {
+    addLog(log, 'err', 'Connection lost — retrying…');
+  };
+}
+function addLog(el, level, msg) {
+  const cls = level==='ok'?'log-ok':level==='warn'?'log-warn':level==='err'?'log-err':'';
+  el.innerHTML += `<div class="log-line ${cls}">${esc(msg)}</div>`;
+  if (el.children.length > 200) el.removeChild(el.firstChild);
+}
+
+// ── Scrape all languages sequentially ────────────────────────────────────
+async function runScrapeAll() {
+  const langs = ['Malayalam','Tamil','Telugu','Kannada','Hindi'];
+  const el = document.getElementById('scrapeResult');
+  el.style.display = 'block';
+  el.innerHTML = '<div class="log-line log-warn"><i class="fas fa-spinner fa-spin"></i> Starting all languages…</div>';
+  let totalSaved = 0;
+  for (const lang of langs) {
+    el.innerHTML += `<div class="log-line log-warn"><i class="fas fa-spinner fa-spin"></i> Scraping ${lang}…</div>`;
+    try {
+      const r = await fetch(`${API_BASE}/sync/now?language=${encodeURIComponent(lang)}&max_movies=500&skip_posters=true`,
+        {method:'POST',headers:{'access_token':API_KEY,'Content-Length':'0'}});
+      const d = await r.json();
+      totalSaved += d.saved||0;
+      el.innerHTML += `<div class="log-line log-ok">✅ ${lang}: saved=${d.saved} raw=${d.scraped_raw} (${d.elapsed_sec}s)</div>`;
+    } catch(e) {
+      el.innerHTML += `<div class="log-line log-err">❌ ${lang}: ${e.message}</div>`;
+    }
+    el.scrollTop = el.scrollHeight;
+    await new Promise(r => setTimeout(r, 1500));
+  }
+  el.innerHTML += `<div class="log-line log-ok" style="font-weight:700">🏁 All done: ${totalSaved} movies saved total</div>`;
+}
+
 function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ── Sync All Languages with SSE live log ──────────────────────────────────
+let _sseSource = null;
+
+async function syncAllLanguages(skipPosters) {
+  const btn = document.getElementById('syncAllBtn');
+  const log = document.getElementById('liveLog');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
+
+  // Clear old log
+  log.innerHTML = '<div class="log-line log-warn">⏳ Starting full sync…</div>';
+
+  // Start SSE listener
+  if(_sseSource) _sseSource.close();
+  _sseSource = new EventSource(`${API_BASE}/admin/sync-stream?access_token=${encodeURIComponent(API_KEY)}`);
+  _sseSource.onmessage = e => {
+    const line = document.createElement('div');
+    line.className = 'log-line ' + (e.data.includes('✅')||e.data.includes('OK')?'log-ok':e.data.includes('❌')||e.data.includes('ERROR')?'log-err':e.data.includes('⚠️')?'log-warn':'');
+    line.textContent = e.data;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  };
+  _sseSource.onerror = () => {
+    const l=document.createElement('div'); l.className='log-line log-warn'; l.textContent='⚠️ Stream disconnected (sync may still be running)'; log.appendChild(l);
+  };
+
+  // Trigger the sync
+  try {
+    const r = await fetch(`${API_BASE}/sync/all?skip_posters=${skipPosters}`,{
+      method:'POST', headers:{'access_token':API_KEY,'Content-Length':'0'}
+    });
+    const d = await r.json();
+    const l=document.createElement('div'); l.className='log-line log-ok'; l.textContent='🚀 '+d.message; log.appendChild(l);
+  } catch(e) {
+    const l=document.createElement('div'); l.className='log-line log-err'; l.textContent='❌ '+e.message; log.appendChild(l);
+  }
+
+  // Re-enable button after 5s
+  setTimeout(() => {
+    btn.disabled=false;
+    btn.innerHTML='<i class="fas fa-play"></i> Sync All Languages';
+    // Refresh dashboard stats
+    loadDashboard();
+  }, 5000);
+}
+
+function clearSyncLog() {
+  document.getElementById('liveLog').innerHTML='<div class="log-line" style="color:var(--txt3)">Log cleared.</div>';
+  if(_sseSource) { _sseSource.close(); _sseSource=null; }
+}
+
+// ── Also patch loadImageStats to use fast stats endpoint ──────────────────
+const _origLoadImageStats = loadImageStats;
+loadImageStats = async function() {
+  const section = document.getElementById('imgProgressSection');
+  section.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading…';
+  const s = await fetch(`${API_BASE}/movies/stats`,{headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>({}));
+  const total=s.total||0, withImg=s.with_poster||0, cloudinary=s.cloudinary||0;
+  const pct = total?Math.round(cloudinary/total*100):0;
+  let langHtml='';
+  if(s.by_language){s.by_language.forEach(l=>{
+    const lp=l.total?Math.round(l.cloudinary/l.total*100):0;
+    langHtml+=`<div style="background:var(--bg4);border-radius:8px;padding:10px 12px">
+      <div style="font-size:.78rem;font-weight:600;display:flex;justify-content:space-between"><span>${l.language}</span><span style="color:var(--txt3)">${l.cloudinary}/${l.total} (${lp}%)</span></div>
+      <div class="prog-wrap" style="height:6px;margin-top:4px"><div class="prog-bar" style="width:${lp}%"></div></div>
+    </div>`;
+  });}
+  section.innerHTML=`
+    <div class="prog-label"><span>Cloudinary: <b>${cloudinary}</b> / ${total}</span><span><b>${pct}%</b></span></div>
+    <div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+    <p style="font-size:.75rem;color:var(--txt3);margin-top:6px">No poster: ${total-withImg} · External (not Cloudinary): ${withImg-cloudinary}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-top:12px">${langHtml}</div>
+  `;
+};
 </script>
 </body>
 </html>
