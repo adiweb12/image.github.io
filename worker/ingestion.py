@@ -34,8 +34,21 @@ def _is_valid(movie: dict) -> bool:
     if not lang:
         return False
     # Filter out non-movie Wikipedia pages
-    skip_patterns = ["list of", "category:", "template:", "disambiguation", "filmography"]
+    skip_patterns = [
+        "list of", "category:", "template:", "disambiguation",
+        "filmography", "index of", "portal:", "wikipedia:",
+    ]
     if any(p in title.lower() for p in skip_patterns):
+        return False
+    # Filter out obvious person names that slipped through
+    # Actor/person pages often have wiki URLs containing these patterns
+    wiki_url = (movie.get("wiki_url") or "").lower()
+    person_url_patterns = [
+        "_(actor)", "_(actress)", "_(director)", "_(singer)",
+        "_(musician)", "_(politician)", "_(cricketer)", "_(footballer)",
+        "_born_", "(born_",
+    ]
+    if any(p in wiki_url for p in person_url_patterns):
         return False
     return True
 

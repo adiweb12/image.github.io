@@ -78,6 +78,44 @@ def _parse_date(raw: str) -> Optional[str]:
     return None
 
 
+def _is_film_page(soup) -> bool:
+    """
+    Return True if this Wikipedia page is about a film (not a person/actor/band).
+    Checks categories and infobox class names.
+    """
+    # Check categories at bottom of page
+    cats = soup.find("div", id="mw-normal-catlinks")
+    if cats:
+        cat_text = cats.get_text(" ", strip=True).lower()
+        # Film pages have these categories
+        film_cats = ["film", "cinema", "movie", "directed by", "screenplay"]
+        # Person pages have these
+        person_cats = ["born", "living people", "male actor", "female actor",
+                       "actor", "actress", "singer", "musician", "politician",
+                       "sportsperson", "footballer", "cricketer"]
+        has_film   = any(c in cat_text for c in film_cats)
+        has_person = any(c in cat_text for c in person_cats)
+        if has_person and not has_film:
+            return False
+        if has_film:
+            return True
+
+    # Check infobox class
+    infobox = soup.find("table", class_=re.compile(r"infobox"))
+    if infobox:
+        classes = " ".join(infobox.get("class", []))
+        if "biography" in classes.lower() or "person" in classes.lower():
+            return False
+        # Check for "Directed by" which is a strong film signal
+        if infobox.find(text=re.compile(r"Directed by|Screenplay|Starring", re.I)):
+            return True
+        # Check for birth date which signals a person page
+        if infobox.find(text=re.compile(r"Born|Died|Nationality|Occupation", re.I)):
+            return False
+
+    return True   # default: accept (better to include than miss films)
+
+
 def _extract_infobox_field(infobox, *labels) -> str:
     """Extract a field value from a Wikipedia infobox table."""
     for label in labels:
@@ -116,6 +154,11 @@ def _fetch_movie_details(session, wiki_url: str, title: str) -> dict:
         return details
 
     soup = BeautifulSoup(resp.text, "lxml")
+
+    # ── Reject person/actor pages immediately ────────────────────────────
+    if not _is_film_page(soup):
+        logger.debug(f"  Skipping non-film page: {wiki_url}")
+        return details   # empty details — caller will not save this as movie
 
     # ── Poster image from infobox ────────────────────────────────────────
     infobox = soup.find("table", class_=re.compile(r"infobox"))
@@ -180,35 +223,54 @@ def scrape_language(language: str, years: list = None, fetch_details: bool = Tru
             # ── Find all movie tables/lists on the page ───────────────────
             scraped_titles = []
 
-            # Method 1: wikitable rows
+            # Patterns that are NEVER movie titles
+            SKIP_HREF = [
+                "Help:", "Wikipedia:", "Category:", "File:", "Template:",
+                "Portal:", "Special:", "Talk:", "User:", "filmography",
+                "List_of", "Index_of",
+            ]
+
+            # Method 1: wikitable rows — ONLY look at the FIRST <td> cell per row
+            # Wikipedia film-list tables always put the movie title in column 1
             for table in soup.find_all("table", class_="wikitable"):
                 for row in table.find_all("tr")[1:]:   # skip header
-                    cells = row.find_all(["td", "th"])
-                    for cell in cells:
-                        link = cell.find("a", href=re.compile(r"^/wiki/"))
-                        if link:
-                            raw = link.get_text(strip=True)
-                            href = link.get("href", "")
-                            # Skip Wikipedia meta-links
-                            if any(x in href for x in ["Help:", "Wikipedia:", "Category:", "File:"]):
-                                continue
-                            title = _clean_title(raw)
-                            if len(title) > 2:
-                                scraped_titles.append((title, f"{WIKI_BASE}{href}"))
-                            break   # only first link per row = movie title
+                    tds = row.find_all("td")
+                    if not tds:
+                        continue
+                    # ONLY the first cell — never director/actor/studio columns
+                    first_cell = tds[0]
+                    link = first_cell.find("a", href=re.compile(r"^/wiki/"))
+                    if not link:
+                        continue
+                    href = link.get("href", "")
+                    if any(x in href for x in SKIP_HREF):
+                        continue
+                    raw = link.get_text(strip=True)
+                    title = _clean_title(raw)
+                    # Skip very short titles and obvious non-film entries
+                    if len(title) < 2:
+                        continue
+                    # Skip entries that look like a person's name with no wiki page
+                    # (film titles rarely have common name suffixes)
+                    if any(title.lower().endswith(s) for s in [
+                        " actor", " actress", " director", " producer", " singer"
+                    ]):
+                        continue
+                    scraped_titles.append((title, f"{WIKI_BASE}{href}"))
 
-            # Method 2: bulleted lists (some years use this)
+            # Method 2: numbered/bulleted lists (some year pages use this format)
             if not scraped_titles:
-                for li in soup.find_all("li"):
+                for li in soup.select("div#mw-content-text li"):
                     link = li.find("a", href=re.compile(r"^/wiki/"))
-                    if link:
-                        raw = link.get_text(strip=True)
-                        href = link.get("href", "")
-                        if any(x in href for x in ["Help:", "Wikipedia:", "Category:", "File:", "List_of"]):
-                            continue
-                        title = _clean_title(raw)
-                        if len(title) > 2:
-                            scraped_titles.append((title, f"{WIKI_BASE}{href}"))
+                    if not link:
+                        continue
+                    href = link.get("href", "")
+                    if any(x in href for x in SKIP_HREF):
+                        continue
+                    raw = link.get_text(strip=True)
+                    title = _clean_title(raw)
+                    if len(title) >= 2:
+                        scraped_titles.append((title, f"{WIKI_BASE}{href}"))
 
             logger.info(f"  Found {len(scraped_titles)} titles on {page_name}")
 
