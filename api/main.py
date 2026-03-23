@@ -88,6 +88,24 @@ def movie_count(language: Optional[str] = Query(None),
 
 
 # ── Cleanup: remove actor/person records ─────────────────────────────────
+@app.post("/cleanup/old", tags=["admin"])
+def cleanup_old_movies(db: Session = Depends(get_db), _=Depends(verify_api_key)):
+    """Remove released movies older than Dec 1 2025."""
+    from sqlalchemy import and_
+    deleted = (
+        db.query(MovieDB)
+        .filter(
+            MovieDB.release_type == "released",
+            MovieDB.release_date != None,
+            MovieDB.release_date < "2025-12-01",
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    logger.info(f"✅ Removed {deleted} old movies (before Dec 2025)")
+    return {"deleted": deleted}
+
+
 @app.post("/cleanup/actors", tags=["admin"])
 def cleanup_actors(db: Session = Depends(get_db), _=Depends(verify_api_key)):
     """

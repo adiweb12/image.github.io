@@ -25,14 +25,18 @@ MAX_JOB_SECONDS = 600  # 10-minute global timeout per full sync
 
 # ── Validation ──────────────────────────────────────────────────────────
 
+RELEASED_CUTOFF_STR = "2025-12-01"  # only include movies from Dec 2025 onwards
+
 def _is_valid(movie: dict) -> bool:
     """Return True if movie data passes basic validation."""
+    import datetime
     title = (movie.get("title") or "").strip()
     lang  = (movie.get("language") or "").strip()
     if not title or len(title) < 2:
         return False
     if not lang:
         return False
+
     # Filter out non-movie Wikipedia pages
     skip_patterns = [
         "list of", "category:", "template:", "disambiguation",
@@ -40,8 +44,8 @@ def _is_valid(movie: dict) -> bool:
     ]
     if any(p in title.lower() for p in skip_patterns):
         return False
-    # Filter out obvious person names that slipped through
-    # Actor/person pages often have wiki URLs containing these patterns
+
+    # Filter out actor/person pages by wiki URL
     wiki_url = (movie.get("wiki_url") or "").lower()
     person_url_patterns = [
         "_(actor)", "_(actress)", "_(director)", "_(singer)",
@@ -50,6 +54,23 @@ def _is_valid(movie: dict) -> bool:
     ]
     if any(p in wiki_url for p in person_url_patterns):
         return False
+
+    # Date filter: only include upcoming OR released from Dec 2025 onwards
+    release_date = movie.get("release_date")
+    release_type = (movie.get("release_type") or "released").lower()
+
+    if release_type == "upcoming":
+        return True  # always include upcoming
+
+    if release_date:
+        try:
+            rd = datetime.datetime.strptime(release_date[:10], "%Y-%m-%d").date()
+            cutoff = datetime.date(2025, 12, 1)
+            if rd < cutoff:
+                return False  # too old — skip
+        except (ValueError, TypeError):
+            pass  # can't parse date — include it anyway
+
     return True
 
 

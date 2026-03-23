@@ -46,7 +46,11 @@ WIKI_LIST_PAGES = {
     ],
 }
 
-YEARS = [2024, 2025, 2026]
+YEARS = [2025, 2026, 2027]   # 2025-onwards: released + upcoming
+
+# Movies released before this date are excluded (keep DB fresh)
+import datetime as _dt
+RELEASED_CUTOFF = _dt.date(2025, 12, 1)   # 1 Dec 2025
 
 
 def _clean_title(raw: str) -> str:
@@ -280,9 +284,18 @@ def scrape_language(language: str, years: list = None, fetch_details: bool = Tru
                     continue
                 seen.add(key)
 
-                # Determine release type
-                from datetime import datetime
-                release_type = "released" if year <= datetime.now().year else "upcoming"
+                # Determine release type:
+                # - future year OR no release date yet → upcoming
+                # - current year or past → released
+                import datetime as _dt2
+                now = _dt2.date.today()
+                if year > now.year:
+                    release_type = "upcoming"
+                elif year == now.year:
+                    # Could be released already or upcoming this year
+                    release_type = "released"  # will be refined in details fetch
+                else:
+                    release_type = "released"
 
                 movie = {
                     "title":        title,
