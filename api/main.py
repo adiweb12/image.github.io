@@ -5,7 +5,12 @@ import datetime
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, Security, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Query, Security, BackgroundTasks, File, UploadFile, Form
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, Response
+from fastapi import Request
+import io
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.security.api_key import APIKeyHeader
@@ -43,6 +48,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MovieBase API", version="1.0.0", lifespan=lifespan)
+
+import os as _os
+_tmpl_dir = _os.path.join(_os.path.dirname(__file__), '..', 'templates')
+templates = Jinja2Templates(directory=_tmpl_dir)
 app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(CORSMiddleware,
     allow_origins=settings.origins_list,
@@ -261,6 +270,135 @@ async def sync_details_now(
 
     return {"language": language, "enriched": done,
             "errors": errors[:5], "elapsed": round(time.time()-start, 1)}
+
+
+# ── Admin Panel HTML ─────────────────────────────────────────────────────
+@app.get("/admin", response_class=HTMLResponse, tags=["admin"])
+async def admin_panel(request: Request):
+    """Admin panel UI — no auth at route level, UI handles key verification."""
+    return templates.TemplateResponse("admin.html", {"request": request})
+
+
+# ── Admin: Add movie manually ─────────────────────────────────────────────
+@app.post("/admin/add-movie", tags=["admin"])
+async def admin_add_movie(
+    payload: dict,
+    db: Session = Depends(get_db),
+    _=Depends(verify_api_key),
+):
+    import datetime
+    try:
+        movie = MovieDB(
+            title        = payload.get("title","").strip(),
+            language     = payload.get("language","").strip(),
+            release_type = payload.get("release_type","released"),
+            release_date = payload.get("release_date"),
+            poster       = payload.get("poster"),
+            description  = payload.get("description",""),
+            director     = payload.get("director",""),
+            cast         = payload.get("cast",""),
+            genre        = payload.get("genre",""),
+            wiki_url     = payload.get("wiki_url"),
+            poster_synced= bool(payload.get("poster","") and "cloudinary" in (payload.get("poster","") or "")),
+            created_at   = datetime.datetime.utcnow(),
+            updated_at   = datetime.datetime.utcnow(),
+        )
+        db.add(movie)
+        db.commit()
+        db.refresh(movie)
+        return {"id": movie.id, "title": movie.title, "ok": True}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Admin: Upload image file → Cloudinary ─────────────────────────────────
+@app.post("/admin/upload-image-file", tags=["admin"])
+async def upload_image_file(
+    file:     UploadFile = File(...),
+    title:    str        = Form("movie"),
+    movie_id: str        = Form(None),
+    db:       Session    = Depends(get_db),
+    _=Depends(verify_api_key),
+):
+    from utils.cloudinary_utils import upload_poster_from_url, _safe_id, _ensure_configured
+    import cloudinary.uploader, io as _io
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    _ensure_configured()
+    safe_id = _safe_id(title)
+    try:
+        result = cloudinary.uploader.upload(
+            _io.BytesIO(image_bytes),
+            public_id      = safe_id,
+            overwrite      = True,
+            resource_type  = "image",
+            transformation = [
+                {"width": 300, "height": 450, "crop": "fill", "gravity": "auto"},
+                {"quality": "auto:good", "fetch_format": "auto"},
+            ],
+        )
+        cloud_url = result.get("secure_url")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # If movie_id provided, update the record
+    if movie_id and cloud_url:
+        try:
+            movie = db.query(MovieDB).filter(MovieDB.id == int(movie_id)).first()
+            if movie:
+                movie.poster        = cloud_url
+                movie.poster_synced = True
+                db.commit()
+        except Exception:
+            db.rollback()
+
+    return {"cloudinary_url": cloud_url, "ok": True}
+
+
+# ── Admin: Upload image from URL → Cloudinary ──────────────────────────────
+@app.post("/admin/upload-image", tags=["admin"])
+async def upload_image_url(
+    payload: dict,
+    _=Depends(verify_api_key),
+):
+    from utils.cloudinary_utils import upload_poster_from_url
+    url   = payload.get("url","").strip()
+    title = payload.get("title","movie")
+    if not url: raise HTTPException(status_code=400, detail="url required")
+    cloud_url = upload_poster_from_url(url, title)
+    return {"cloudinary_url": cloud_url, "ok": True}
+
+
+# ── Admin: Remove image from a movie ──────────────────────────────────────
+@app.post("/admin/remove-image/{movie_id}", tags=["admin"])
+async def remove_image(
+    movie_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(verify_api_key),
+):
+    movie = db.query(MovieDB).filter(MovieDB.id == movie_id).first()
+    if not movie: raise HTTPException(status_code=404, detail="Movie not found")
+    movie.poster        = None
+    movie.poster_synced = False
+    db.commit()
+    return {"ok": True, "movie": movie.title}
+
+
+# ── Export DB (query param key for browser downloads) ─────────────────────
+@app.get("/export", tags=["admin"])
+async def export_db(key: str = Query(""), db: Session = Depends(get_db)):
+    import hmac, json
+    if not key or not hmac.compare_digest(key.encode(), API_KEY.encode()):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    movies = [m.__dict__.copy() for m in db.query(MovieDB).all()]
+    for m in movies: m.pop('_sa_instance_state', None)
+    payload = json.dumps({"exportedAt": str(datetime.datetime.utcnow()), "movies": movies}, default=str, indent=2)
+    return Response(content=payload, media_type="application/json",
+                    headers={"Content-Disposition": 'attachment; filename="moviebase-export.json"'})
 
 
 @app.post("/sync/posters", response_model=SyncResponse, tags=["admin"])

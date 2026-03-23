@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>MovieBase Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<style>
+:root{
+  --bg:#0b0b0f;--bg2:#111118;--bg3:#18181f;--bg4:#1e1e28;
+  --red:#e5293e;--gold:#f5c518;--green:#27ae60;--blue:#2563eb;
+  --txt:#f0f0f5;--txt2:#9999aa;--txt3:#55555f;
+  --border:rgba(255,255,255,.07);--r:10px;--ease:.2s ease;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;border:none;font-family:inherit}
+
+/* ── Layout ── */
+.layout{display:flex;min-height:100vh}
+.sidebar{width:240px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;position:fixed;height:100vh;overflow-y:auto;z-index:100}
+.main{margin-left:240px;padding:28px;flex:1;min-width:0}
+
+/* ── Sidebar ── */
+.sb-brand{padding:20px 20px 16px;border-bottom:1px solid var(--border);
+  font-size:1.1rem;font-weight:900}
+.sb-brand span{color:var(--red)}
+.sb-sub{font-size:.7rem;color:var(--txt3);margin-top:2px}
+.sb-nav{padding:10px 8px;flex:1}
+.sb-link{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;
+  font-size:.88rem;color:var(--txt2);cursor:pointer;transition:var(--ease);margin-bottom:2px;border:none;background:none;width:100%;text-align:left}
+.sb-link:hover,.sb-link.active{background:var(--border);color:var(--txt)}
+.sb-link i{width:16px;text-align:center}
+.sb-section{font-size:.68rem;text-transform:uppercase;letter-spacing:.8px;
+  color:var(--txt3);padding:12px 14px 4px;font-weight:600}
+
+/* ── Auth gate ── */
+.auth-gate{display:flex;align-items:center;justify-content:center;min-height:100vh;
+  background:var(--bg);padding:20px}
+.auth-card{background:var(--bg3);border:1px solid var(--border);border-radius:16px;
+  padding:40px;width:100%;max-width:380px;text-align:center}
+.auth-card h1{font-size:1.5rem;font-weight:800;margin-bottom:6px}
+.auth-card p{color:var(--txt2);font-size:.88rem;margin-bottom:24px}
+.auth-card input{width:100%;background:var(--bg4);border:1.5px solid var(--border);
+  border-radius:8px;color:var(--txt);padding:12px 14px;font-size:.95rem;margin-bottom:12px;outline:none;font-family:inherit}
+.auth-card input:focus{border-color:var(--red)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 20px;border-radius:8px;
+  font-size:.88rem;font-weight:600;cursor:pointer;border:none;transition:var(--ease)}
+.btn-red{background:var(--red);color:#fff}.btn-red:hover{background:#c0192b}
+.btn-ghost{background:transparent;border:1.5px solid var(--border);color:var(--txt2)}.btn-ghost:hover{border-color:var(--red);color:var(--red)}
+.btn-green{background:rgba(39,174,96,.15);border:1px solid rgba(39,174,96,.3);color:#2ecc71}.btn-green:hover{background:rgba(39,174,96,.25)}
+.btn-sm{padding:5px 12px;font-size:.78rem}
+.btn-full{width:100%;justify-content:center;padding:13px}
+.btn-danger{background:rgba(229,41,62,.15);border:1px solid rgba(229,41,62,.3);color:var(--red)}.btn-danger:hover{background:rgba(229,41,62,.3)}
+
+/* ── Panels (tabs) ── */
+.panel{display:none}.panel.active{display:block}
+
+/* ── Page header ── */
+.page-hd{margin-bottom:24px}
+.page-hd h1{font-size:1.4rem;font-weight:800;display:flex;align-items:center;gap:10px}
+.page-hd p{color:var(--txt2);font-size:.88rem;margin-top:4px}
+
+/* ── Stat grid ── */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:20px;display:flex;align-items:center;gap:14px}
+.stat-card i{font-size:1.6rem;opacity:.8}
+.stat-card.red i{color:var(--red)}.stat-card.green i{color:var(--green)}
+.stat-card.blue i{color:var(--blue)}.stat-card.gold i{color:var(--gold)}
+.stat-val{font-size:1.6rem;font-weight:800}.stat-lbl{font-size:.75rem;color:var(--txt3)}
+
+/* ── Section card ── */
+.section{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:22px;margin-bottom:20px}
+.section h2{font-size:1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;color:var(--txt2)}
+
+/* ── Table ── */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{padding:9px 12px;text-align:left;background:var(--bg4);color:var(--txt2);font-weight:600;
+  font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--txt2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.poster-thumb{width:32px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border)}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:700}
+.badge-released{background:rgba(39,174,96,.2);color:#2ecc71}
+.badge-upcoming{background:rgba(124,58,237,.2);color:#a78bfa}
+.badge-trending{background:rgba(229,41,62,.2);color:var(--red)}
+.img-ok{color:var(--green)}.img-missing{color:var(--txt3)}
+
+/* ── Progress bar ── */
+.prog-wrap{background:var(--bg4);border-radius:20px;height:12px;overflow:hidden;margin:6px 0}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--red),#9b59b6);border-radius:20px;
+  transition:width .4s ease}
+.prog-label{font-size:.75rem;color:var(--txt2);margin-bottom:4px;display:flex;justify-content:space-between}
+
+/* ── Image actions ── */
+.img-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.img-action-card{background:var(--bg4);border:1px solid var(--border);border-radius:12px;padding:20px}
+.img-action-card h3{font-size:.9rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:7px}
+.img-action-card p{font-size:.8rem;color:var(--txt3);margin-bottom:14px}
+
+/* ── Upload drop zone ── */
+.drop-zone{border:2px dashed var(--border);border-radius:10px;padding:28px;text-align:center;
+  cursor:pointer;transition:var(--ease);position:relative}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--red);background:rgba(229,41,62,.05)}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.drop-zone i{font-size:1.8rem;color:var(--txt3);margin-bottom:8px}
+.drop-zone p{font-size:.82rem;color:var(--txt2)}
+.drop-zone small{font-size:.72rem;color:var(--txt3)}
+#uploadPreview{width:80px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:none;margin:10px auto 0}
+
+/* ── Form ── */
+.fg{margin-bottom:14px}
+.fg label{display:block;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2);margin-bottom:6px}
+.fg input,.fg select,.fg textarea{width:100%;background:var(--bg4);border:1.5px solid var(--border);
+  border-radius:8px;color:var(--txt);padding:10px 13px;font-size:.88rem;font-family:inherit;outline:none;transition:border-color var(--ease)}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--red)}
+.fg select option{background:var(--bg4)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fg-full{grid-column:1/-1}
+.form-actions{display:flex;gap:10px;margin-top:6px}
+
+/* ── Flash ── */
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:.88rem;display:flex;align-items:center;gap:8px}
+.flash-ok{background:rgba(39,174,96,.13);border:1px solid rgba(39,174,96,.3);color:#2ecc71}
+.flash-err{background:rgba(229,41,62,.12);border:1px solid rgba(229,41,62,.3);color:var(--red)}
+
+/* ── Log ── */
+.log-wrap{max-height:300px;overflow-y:auto;font-family:monospace;font-size:.78rem;
+  background:var(--bg);border-radius:8px;padding:12px;border:1px solid var(--border);
+  scrollbar-width:thin;scrollbar-color:var(--red) transparent}
+.log-line{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.log-ok{color:#2ecc71}.log-warn{color:var(--gold)}.log-err{color:var(--red)}
+
+/* ── Spinner ── */
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .sidebar{width:100%;height:auto;position:static;flex-direction:row;overflow-x:auto}
+  .sb-nav{display:flex;flex-direction:row;padding:6px;gap:4px;flex:1;overflow-x:auto}
+  .sb-section{display:none}
+  .main{margin-left:0;padding:14px}
+  .stat-grid{grid-template-columns:1fr 1fr}
+  .img-action-grid,.form-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- Auth Gate -->
+<div id="authGate" class="auth-gate">
+  <div class="auth-card">
+    <div style="font-size:2rem;margin-bottom:12px">🎬</div>
+    <h1>MovieBase Admin</h1>
+    <p>Enter your API key to access the panel</p>
+    <input type="password" id="apiKeyInput" placeholder="API Key" autocomplete="off"/>
+    <div id="authError" class="flash flash-err" style="display:none;margin-bottom:12px">
+      <i class="fas fa-times-circle"></i> Invalid API key
+    </div>
+    <button class="btn btn-red btn-full" onclick="doLogin()">
+      <i class="fas fa-sign-in-alt"></i> Enter
+    </button>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app" class="layout" style="display:none">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sb-brand">🎬 <span>MovieBase</span><div class="sb-sub">Admin Panel</div></div>
+    <nav class="sb-nav">
+      <div class="sb-section">Overview</div>
+      <button class="sb-link active" onclick="showPanel('dashboard',this)">
+        <i class="fas fa-gauge-high"></i> Dashboard
+      </button>
+
+      <div class="sb-section">Movies</div>
+      <button class="sb-link" onclick="showPanel('movies',this)">
+        <i class="fas fa-list"></i> View Movies
+      </button>
+      <button class="sb-link" onclick="showPanel('add',this)">
+        <i class="fas fa-plus-circle"></i> Add Movie
+      </button>
+
+      <div class="sb-section">Images</div>
+      <button class="sb-link" onclick="showPanel('images',this)">
+        <i class="fas fa-images"></i> Image Manager
+      </button>
+
+      <div class="sb-section">Sync</div>
+      <button class="sb-link" onclick="showPanel('sync',this)">
+        <i class="fas fa-rotate"></i> Scraper & Sync
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- ── Dashboard ── -->
+    <div id="panel-dashboard" class="panel active">
+      <div class="page-hd">
+        <h1><i class="fas fa-gauge-high"></i> Dashboard</h1>
+        <p>MovieBase microservice overview</p>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card red"><i class="fas fa-film"></i><div><div class="stat-val" id="statTotal">—</div><div class="stat-lbl">Total Movies</div></div></div>
+        <div class="stat-card green"><i class="fas fa-check-circle"></i><div><div class="stat-val" id="statWithImg">—</div><div class="stat-lbl">With Poster</div></div></div>
+        <div class="stat-card gold"><i class="fab fa-cloudinary"></i><div><div class="stat-val" id="statCloudinary">—</div><div class="stat-lbl">Cloudinary</div></div></div>
+        <div class="stat-card blue"><i class="fas fa-calendar"></i><div><div class="stat-val" id="statUpcoming">—</div><div class="stat-lbl">Upcoming</div></div></div>
+      </div>
+      <div class="section">
+        <h2><i class="fas fa-circle-info"></i> Service Status</h2>
+        <div id="healthInfo" style="color:var(--txt2);font-size:.88rem">Loading…</div>
+      </div>
+      <div class="section">
+        <h2><i class="fas fa-image"></i> Poster Coverage</h2>
+        <div id="posterProgress"></div>
+      </div>
+    </div>
+
+    <!-- ── View Movies ── -->
+    <div id="panel-movies" class="panel">
+      <div class="page-hd">
+        <h1><i class="fas fa-list"></i> Movies</h1>
+      </div>
+      <div class="section">
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <input type="text" id="movieSearch" placeholder="Search title…" style="flex:1;min-width:160px;background:var(--bg4);border:1.5px solid var(--border);border-radius:8px;color:var(--txt);padding:8px 12px;font-size:.88rem;outline:none" oninput="filterMovies()"/>
+          <select id="movieLangFilter" onchange="filterMovies()" style="background:var(--bg4);border:1.5px solid var(--border);border-radius:8px;color:var(--txt);padding:8px 12px;font-size:.88rem;outline:none">
+            <option value="">All Languages</option>
+            <option>Malayalam</option><option>Tamil</option><option>Telugu</option><option>Kannada</option><option>Hindi</option>
+          </select>
+          <select id="movieTypeFilter" onchange="filterMovies()" style="background:var(--bg4);border:1.5px solid var(--border);border-radius:8px;color:var(--txt);padding:8px 12px;font-size:.88rem;outline:none">
+            <option value="">All Types</option>
+            <option value="released">Released</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="trending">Trending</option>
+          </select>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>Poster</th><th>Title</th><th>Language</th><th>Type</th><th>Release</th><th>Director</th><th>Image</th><th>Action</th></tr></thead>
+            <tbody id="moviesTbody"><tr><td colspan="8" style="text-align:center;padding:30px;color:var(--txt3)">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="moviesPage" style="display:flex;gap:8px;margin-top:14px;align-items:center">
+          <button class="btn btn-ghost btn-sm" onclick="moviesPageChange(-1)"><i class="fas fa-chevron-left"></i></button>
+          <span id="pageInfo" style="font-size:.83rem;color:var(--txt2)">Page 1</span>
+          <button class="btn btn-ghost btn-sm" onclick="moviesPageChange(1)"><i class="fas fa-chevron-right"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Add Movie ── -->
+    <div id="panel-add" class="panel">
+      <div class="page-hd"><h1><i class="fas fa-plus-circle"></i> Add Movie</h1></div>
+      <div class="section">
+        <div id="addFlash"></div>
+        <div class="form-grid">
+          <div class="fg"><label>Title *</label><input type="text" id="addTitle" placeholder="Movie title"/></div>
+          <div class="fg"><label>Language *</label>
+            <select id="addLang">
+              <option value="">Select…</option>
+              <option>Malayalam</option><option>Tamil</option><option>Telugu</option><option>Kannada</option><option>Hindi</option>
+            </select>
+          </div>
+          <div class="fg"><label>Type</label>
+            <select id="addType">
+              <option value="released">Released</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="trending">Trending</option>
+            </select>
+          </div>
+          <div class="fg"><label>Release Date</label><input type="date" id="addDate"/></div>
+          <div class="fg"><label>Director</label><input type="text" id="addDirector"/></div>
+          <div class="fg"><label>Duration (min)</label><input type="number" id="addDuration" placeholder="e.g. 148"/></div>
+          <div class="fg"><label>Cast <small style="color:var(--txt3)">(comma separated)</small></label><input type="text" id="addCast"/></div>
+          <div class="fg"><label>Genre <small style="color:var(--txt3)">(comma separated)</small></label><input type="text" id="addGenre"/></div>
+          <div class="fg fg-full"><label>Description</label><textarea id="addDesc" rows="3" placeholder="Movie description…"></textarea></div>
+          <div class="fg fg-full">
+            <label>Poster Image <small style="color:var(--txt3)">(upload file or paste URL)</small></label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px">
+              <div>
+                <div class="drop-zone" id="addDropZone">
+                  <input type="file" id="addImageFile" accept="image/*" onchange="previewAddImg(this)"/>
+                  <i class="fas fa-cloud-upload-alt"></i>
+                  <p>Drop image or click to upload</p>
+                  <small>JPG, PNG, WEBP · max 10MB</small>
+                </div>
+                <img id="addImgPreview" src="" style="width:80px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:none;margin-top:10px"/>
+              </div>
+              <div class="fg" style="margin:0">
+                <label>Or Image URL</label>
+                <input type="url" id="addImageUrl" placeholder="https://…" oninput="previewAddUrl(this.value)"/>
+                <img id="addUrlPreview" src="" style="width:80px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:none;margin-top:10px"/>
+                <div style="margin-top:10px">
+                  <label style="font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--txt2)">Upload URL to Cloudinary</label>
+                  <button class="btn btn-ghost btn-sm" style="margin-top:6px;width:100%" onclick="uploadUrlToCloudinary()">
+                    <i class="fab fa-cloudinary"></i> Upload to Cloudinary
+                  </button>
+                  <div id="cloudinaryResult" style="margin-top:6px;font-size:.75rem;color:var(--green)"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-red" onclick="addMovie()"><i class="fas fa-plus"></i> Add Movie</button>
+          <button class="btn btn-ghost" onclick="clearAddForm()"><i class="fas fa-xmark"></i> Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Image Manager ── -->
+    <div id="panel-images" class="panel">
+      <div class="page-hd"><h1><i class="fas fa-images"></i> Image Manager</h1></div>
+
+      <!-- Progress overview -->
+      <div class="section">
+        <h2><i class="fas fa-chart-pie"></i> Cloudinary Upload Progress</h2>
+        <div id="imgProgressSection">
+          <div style="color:var(--txt2);font-size:.88rem">Loading stats…</div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-red" onclick="startPosterSync()" id="syncPostersBtn">
+            <i class="fas fa-rotate"></i> Start Poster Upload
+          </button>
+          <button class="btn btn-ghost" onclick="loadImageStats()">
+            <i class="fas fa-refresh"></i> Refresh
+          </button>
+        </div>
+        <div id="syncLog" class="log-wrap" style="margin-top:14px;display:none"></div>
+      </div>
+
+      <!-- Manual image upload per movie -->
+      <div class="section">
+        <h2><i class="fas fa-upload"></i> Upload Image for a Movie</h2>
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <input type="text" id="imgSearchMovie" placeholder="Search movie title…"
+            style="flex:1;min-width:160px;background:var(--bg4);border:1.5px solid var(--border);border-radius:8px;color:var(--txt);padding:8px 12px;font-size:.88rem;outline:none"
+            oninput="searchMovieForImage()"/>
+          <select id="imgMovieSelect" style="background:var(--bg4);border:1.5px solid var(--border);border-radius:8px;color:var(--txt);padding:8px 12px;font-size:.88rem;outline:none;min-width:200px">
+            <option value="">— select movie —</option>
+          </select>
+        </div>
+        <div class="img-action-grid">
+          <!-- Upload file -->
+          <div class="img-action-card">
+            <h3><i class="fas fa-upload"></i> Upload from Device</h3>
+            <p>Select an image file from your device to upload directly to Cloudinary</p>
+            <div class="drop-zone" id="imgDropZone">
+              <input type="file" id="imgUploadFile" accept="image/*" onchange="previewUploadImg(this)"/>
+              <i class="fas fa-cloud-upload-alt"></i>
+              <p>Drop image or click</p>
+              <small>JPG, PNG, WEBP</small>
+            </div>
+            <img id="imgUploadPreview" style="width:70px;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:none;margin:10px auto 0"/>
+            <!-- Progress bar -->
+            <div id="uploadProgress" style="display:none;margin-top:12px">
+              <div class="prog-label"><span>Uploading…</span><span id="uploadPct">0%</span></div>
+              <div class="prog-wrap"><div class="prog-bar" id="uploadBar" style="width:0%"></div></div>
+            </div>
+            <button class="btn btn-red" style="width:100%;margin-top:12px" onclick="uploadImageForMovie()">
+              <i class="fab fa-cloudinary"></i> Upload to Cloudinary
+            </button>
+            <div id="uploadResult" style="margin-top:8px;font-size:.78rem"></div>
+          </div>
+
+          <!-- Remove image -->
+          <div class="img-action-card">
+            <h3><i class="fas fa-trash-can"></i> Remove Image</h3>
+            <p>Remove the current poster image from the selected movie (sets to null)</p>
+            <div id="currentImgPreview" style="margin-bottom:12px">
+              <div style="font-size:.78rem;color:var(--txt3)">Select a movie to preview its poster</div>
+            </div>
+            <button class="btn btn-danger" style="width:100%" onclick="removeMovieImage()">
+              <i class="fas fa-trash"></i> Remove Poster
+            </button>
+            <div id="removeResult" style="margin-top:8px;font-size:.78rem"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Scraper & Sync ── -->
+    <div id="panel-sync" class="panel">
+      <div class="page-hd"><h1><i class="fas fa-rotate"></i> Scraper & Sync</h1></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="section">
+          <h2><i class="fas fa-spider"></i> Scrape by Language</h2>
+          <div class="fg">
+            <label>Language</label>
+            <select id="scrapeLanguage">
+              <option>Malayalam</option><option>Tamil</option><option>Telugu</option><option>Kannada</option><option>Hindi</option>
+            </select>
+          </div>
+          <button class="btn btn-red" onclick="runScrape()"><i class="fas fa-play"></i> Start Scrape</button>
+          <div id="scrapeResult" class="log-wrap" style="margin-top:12px;display:none"></div>
+        </div>
+        <div class="section">
+          <h2><i class="fas fa-book-open"></i> Enrich Details</h2>
+          <p style="font-size:.82rem;color:var(--txt2);margin-bottom:12px">Fetch director, cast, description from individual Wikipedia pages</p>
+          <div class="fg">
+            <label>Language</label>
+            <select id="enrichLanguage">
+              <option>Malayalam</option><option>Tamil</option><option>Telugu</option><option>Kannada</option><option>Hindi</option>
+            </select>
+          </div>
+          <div class="fg">
+            <label>Batch size</label>
+            <select id="enrichBatch">
+              <option value="10">10 movies</option><option value="20" selected>20 movies</option><option value="30">30 movies</option>
+            </select>
+          </div>
+          <button class="btn btn-red" onclick="runEnrich()"><i class="fas fa-play"></i> Enrich</button>
+          <div id="enrichResult" class="log-wrap" style="margin-top:12px;display:none"></div>
+        </div>
+        <div class="section">
+          <h2><i class="fas fa-broom"></i> Cleanup</h2>
+          <p style="font-size:.82rem;color:var(--txt2);margin-bottom:12px">Remove actor/person records and old movies (pre-Dec 2025)</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="runCleanup('actors')"><i class="fas fa-user-slash"></i> Remove Actors</button>
+            <button class="btn btn-ghost btn-sm" onclick="runCleanup('old')"><i class="fas fa-calendar-xmark"></i> Remove Old Movies</button>
+          </div>
+          <div id="cleanupResult" class="log-wrap" style="margin-top:12px;display:none"></div>
+        </div>
+        <div class="section">
+          <h2><i class="fas fa-database"></i> Database</h2>
+          <p style="font-size:.82rem;color:var(--txt2);margin-bottom:12px">Export or reset the movie database</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <a id="exportLink" href="#" class="btn btn-ghost btn-sm" onclick="exportDB()"><i class="fas fa-download"></i> Export JSON</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let API_KEY  = '';
+let API_BASE = window.location.origin;
+let allMovies = [];
+let moviesPage = 0;
+const PAGE = 50;
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) return;
+  try {
+    const r = await fetch(`${API_BASE}/health`);
+    const d = await r.json();
+    if (d.status !== 'ok') throw new Error('Service not ready');
+    // Verify key
+    const r2 = await fetch(`${API_BASE}/movies/count`, {headers:{'access_token':key}});
+    if (r2.status === 403) { showAuthErr('Invalid API key'); return; }
+    API_KEY = key;
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('app').style.display      = 'flex';
+    loadDashboard();
+  } catch(e) { showAuthErr(e.message); }
+}
+function showAuthErr(msg) {
+  const el = document.getElementById('authError');
+  el.style.display = 'flex';
+  el.innerHTML = `<i class="fas fa-times-circle"></i> ${msg}`;
+}
+document.getElementById('apiKeyInput').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+
+// ── Navigation ────────────────────────────────────────────────────────────
+function showPanel(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sb-link').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(id==='dashboard') loadDashboard();
+  if(id==='movies')    loadMovies();
+  if(id==='images')    loadImageStats();
+}
+
+// ── API helper ────────────────────────────────────────────────────────────
+async function api(method, path, body={}) {
+  const opts = { method, headers: { 'access_token': API_KEY, 'Content-Type':'application/json' } };
+  if(method!=='GET') opts.body = JSON.stringify(body);
+  const r = await fetch(`${API_BASE}${path}`, opts);
+  return r.json().catch(() => ({}));
+}
+async function apiPost(path) {
+  const r = await fetch(`${API_BASE}${path}`, {method:'POST', headers:{'access_token':API_KEY,'Content-Length':'0'}});
+  return r.json().catch(() => ({}));
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  // Health
+  const h = await fetch(`${API_BASE}/health`).then(r=>r.json()).catch(()=>({}));
+  document.getElementById('healthInfo').innerHTML = `
+    <b style="color:${h.status==='ok'?'var(--green)':'var(--red)'}">● ${h.status || 'unknown'}</b>
+    &nbsp;·&nbsp; DB: ${h.db || '?'}
+    &nbsp;·&nbsp; Last sync: ${h.last_sync ? new Date(h.last_sync).toLocaleString() : 'Never'}
+  `;
+
+  // Stats
+  const count  = await fetch(`${API_BASE}/movies/count`, {headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>({}));
+  const total  = count.count || 0;
+  document.getElementById('statTotal').textContent = total;
+
+  // Pull a sample to calculate poster stats
+  let withImg=0, cloudinary=0, upcoming=0;
+  let skip=0;
+  while(true) {
+    const page = await fetch(`${API_BASE}/movies?skip=${skip}&limit=100`,{headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>[]);
+    if(!Array.isArray(page)||!page.length) break;
+    page.forEach(m => {
+      if(m.poster) withImg++;
+      if(m.poster && m.poster.includes('cloudinary')) cloudinary++;
+      if(m.release_type==='upcoming') upcoming++;
+    });
+    skip+=100;
+    if(page.length<100) break;
+  }
+  document.getElementById('statWithImg').textContent    = withImg;
+  document.getElementById('statCloudinary').textContent = cloudinary;
+  document.getElementById('statUpcoming').textContent   = upcoming;
+
+  const pct = total ? Math.round(cloudinary/total*100) : 0;
+  document.getElementById('posterProgress').innerHTML = `
+    <div class="prog-label"><span>Cloudinary posters: ${cloudinary} / ${total}</span><span>${pct}%</span></div>
+    <div class="prog-wrap"><div class="prog-bar" style="width:${pct}%"></div></div>
+    <p style="font-size:.75rem;color:var(--txt3);margin-top:6px">Missing: ${total-withImg} movies have no poster · Wikimedia (not Cloudinary): ${withImg-cloudinary}</p>
+  `;
+}
+
+// ── Movies list ───────────────────────────────────────────────────────────
+async function loadMovies() {
+  const tbody = document.getElementById('moviesTbody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--txt3)"><i class="fas fa-spinner fa-spin"></i> Loading…</td></tr>';
+  allMovies = [];
+  let skip = 0;
+  while(true) {
+    const page = await fetch(`${API_BASE}/movies?skip=${skip}&limit=100`,{headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>[]);
+    if(!Array.isArray(page)||!page.length) break;
+    allMovies.push(...page);
+    skip+=100;
+    if(page.length<100) break;
+  }
+  moviesPage = 0;
+  renderMovies();
+}
+
+function filterMovies() {
+  const q    = document.getElementById('movieSearch').value.toLowerCase();
+  const lang = document.getElementById('movieLangFilter').value.toLowerCase();
+  const type = document.getElementById('movieTypeFilter').value.toLowerCase();
+  const filtered = allMovies.filter(m =>
+    (!q    || m.title.toLowerCase().includes(q)) &&
+    (!lang || (m.language||'').toLowerCase().includes(lang)) &&
+    (!type || (m.release_type||'').toLowerCase()===type)
+  );
+  moviesPage = 0;
+  renderMovies(filtered);
+}
+
+function renderMovies(list) {
+  const src = list || allMovies;
+  const page = src.slice(moviesPage*PAGE, (moviesPage+1)*PAGE);
+  const tbody = document.getElementById('moviesTbody');
+  if(!page.length) { tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--txt3)">No movies</td></tr>'; return; }
+  tbody.innerHTML = page.map(m => `
+    <tr>
+      <td>${m.poster?`<img src="${m.poster}" class="poster-thumb" onerror="this.style.display='none'">`:'<span style="color:var(--txt3);font-size:.75rem">—</span>'}</td>
+      <td style="color:var(--txt);font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.title)}</td>
+      <td>${m.language||'—'}</td>
+      <td><span class="badge badge-${m.release_type||'released'}">${m.release_type||'released'}</span></td>
+      <td>${m.release_date?m.release_date.slice(0,10):'—'}</td>
+      <td>${esc(m.director||'—')}</td>
+      <td>${m.poster?(m.poster.includes('cloudinary')?'<i class="fas fa-check img-ok" title="Cloudinary"></i>':'<i class="fas fa-link img-missing" title="External URL"></i>'):'<i class="fas fa-times img-missing" title="No image"></i>'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="deleteMovie(${m.id},'${esc(m.title)}')"><i class="fas fa-trash"></i></button></td>
+    </tr>`).join('');
+  document.getElementById('pageInfo').textContent = `Page ${moviesPage+1} / ${Math.ceil(src.length/PAGE)||1} (${src.length} total)`;
+}
+
+function moviesPageChange(d) {
+  const q    = document.getElementById('movieSearch').value.toLowerCase();
+  const lang = document.getElementById('movieLangFilter').value.toLowerCase();
+  const type = document.getElementById('movieTypeFilter').value.toLowerCase();
+  const src  = allMovies.filter(m=>(!q||m.title.toLowerCase().includes(q))&&(!lang||(m.language||'').toLowerCase().includes(lang))&&(!type||(m.release_type||'')===type));
+  const max  = Math.ceil(src.length/PAGE)-1;
+  moviesPage = Math.max(0, Math.min(max, moviesPage+d));
+  renderMovies(src);
+}
+
+async function deleteMovie(id, title) {
+  if(!confirm(`Delete "${title}"?`)) return;
+  // No direct delete endpoint exposed — just note to user
+  alert('Delete via the database directly or add a DELETE endpoint to movie_base.');
+}
+
+// ── Add Movie ─────────────────────────────────────────────────────────────
+function previewAddImg(input) {
+  const f = input.files[0]; if(!f) return;
+  document.getElementById('addImageUrl').value = '';
+  document.getElementById('addUrlPreview').style.display='none';
+  const r = new FileReader();
+  r.onload = e => {
+    const el = document.getElementById('addImgPreview');
+    el.src = e.target.result; el.style.display='block';
+  };
+  r.readAsDataURL(f);
+}
+function previewAddUrl(url) {
+  const el = document.getElementById('addUrlPreview');
+  if(url&&url.startsWith('http')) { el.src=url; el.style.display='block'; }
+  else el.style.display='none';
+  document.getElementById('addImageFile').value='';
+  document.getElementById('addImgPreview').style.display='none';
+}
+
+async function uploadUrlToCloudinary() {
+  const url = document.getElementById('addImageUrl').value.trim();
+  if(!url) return alert('Enter an image URL first');
+  const el  = document.getElementById('cloudinaryResult');
+  el.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading…';
+  try {
+    const r = await fetch(`${API_BASE}/admin/upload-image`,{
+      method:'POST', headers:{'access_token':API_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify({ url, title: document.getElementById('addTitle').value||'movie' })
+    });
+    const d = await r.json();
+    if(d.cloudinary_url) {
+      document.getElementById('addImageUrl').value = d.cloudinary_url;
+      previewAddUrl(d.cloudinary_url);
+      el.innerHTML = `<i class="fas fa-check" style="color:var(--green)"></i> Uploaded: ${d.cloudinary_url.slice(0,50)}…`;
+    } else { el.innerHTML = `<span style="color:var(--red)">${d.detail||'Failed'}</span>`; }
+  } catch(e) { el.innerHTML = `<span style="color:var(--red)">${e.message}</span>`; }
+}
+
+async function addMovie() {
+  const title = document.getElementById('addTitle').value.trim();
+  const lang  = document.getElementById('addLang').value;
+  if(!title||!lang) { showAddFlash('Title and language are required','err'); return; }
+
+  let imageUrl = document.getElementById('addImageUrl').value.trim() || null;
+
+  // If file selected, upload it first
+  const fileInput = document.getElementById('addImageFile');
+  if(fileInput.files[0]) {
+    showAddFlash('<i class="fas fa-spinner fa-spin"></i> Uploading image…','ok');
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    fd.append('title', title);
+    try {
+      const r = await fetch(`${API_BASE}/admin/upload-image-file`,{method:'POST',headers:{'access_token':API_KEY},body:fd});
+      const d = await r.json();
+      if(d.cloudinary_url) imageUrl = d.cloudinary_url;
+    } catch(e) { console.warn('Image upload failed', e); }
+  }
+
+  const payload = {
+    title, language:lang,
+    release_type: document.getElementById('addType').value,
+    release_date: document.getElementById('addDate').value || null,
+    director:     document.getElementById('addDirector').value.trim(),
+    cast:         document.getElementById('addCast').value.trim(),
+    genre:        document.getElementById('addGenre').value.trim(),
+    description:  document.getElementById('addDesc').value.trim(),
+    duration:     parseInt(document.getElementById('addDuration').value)||null,
+    poster:       imageUrl,
+  };
+
+  showAddFlash('<i class="fas fa-spinner fa-spin"></i> Saving…','ok');
+  try {
+    const r = await fetch(`${API_BASE}/admin/add-movie`,{
+      method:'POST', headers:{'access_token':API_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if(d.id||d.title) {
+      showAddFlash(`<i class="fas fa-check"></i> "${title}" added successfully!`,'ok');
+      clearAddForm();
+    } else { showAddFlash(d.detail||JSON.stringify(d),'err'); }
+  } catch(e) { showAddFlash(e.message,'err'); }
+}
+function showAddFlash(msg,type) {
+  const el = document.getElementById('addFlash');
+  el.innerHTML = `<div class="flash flash-${type==='ok'?'ok':'err'}">${msg}</div>`;
+}
+function clearAddForm() {
+  ['addTitle','addDirector','addCast','addGenre','addDesc','addDuration','addImageUrl'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('addLang').selectedIndex=0;
+  document.getElementById('addType').selectedIndex=0;
+  document.getElementById('addDate').value='';
+  document.getElementById('addImgPreview').style.display='none';
+  document.getElementById('addUrlPreview').style.display='none';
+  document.getElementById('cloudinaryResult').innerHTML='';
+  document.getElementById('addImageFile').value='';
+}
+
+// ── Image Manager ─────────────────────────────────────────────────────────
+async function loadImageStats() {
+  const section = document.getElementById('imgProgressSection');
+  section.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating…';
+  let total=0,withImg=0,cloudinary=0,byLang={};
+  let skip=0;
+  while(true){
+    const page = await fetch(`${API_BASE}/movies?skip=${skip}&limit=100`,{headers:{'access_token':API_KEY}}).then(r=>r.json()).catch(()=>[]);
+    if(!Array.isArray(page)||!page.length) break;
+    page.forEach(m=>{
+      total++;
+      const lang = m.language||'Other';
+      if(!byLang[lang]) byLang[lang]={total:0,cloud:0};
+      byLang[lang].total++;
+      if(m.poster){withImg++;if(m.poster.includes('cloudinary')){cloudinary++;byLang[lang].cloud++;}}
+    });
+    skip+=100; if(page.length<100) break;
+  }
+  const overallPct = total?Math.round(cloudinary/total*100):0;
+  let html = `
+    <div class="prog-label"><span><b>${cloudinary}</b> / ${total} movies have Cloudinary posters</span><span><b>${overallPct}%</b></span></div>
+    <div class="prog-wrap"><div class="prog-bar" style="width:${overallPct}%"></div></div>
+    <p style="font-size:.75rem;color:var(--txt3);margin-top:6px">No poster: ${total-withImg} · External URL (not Cloudinary): ${withImg-cloudinary}</p>
+    <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+  `;
+  Object.entries(byLang).sort((a,b)=>b[1].total-a[1].total).forEach(([lang,s])=>{
+    const p = s.total?Math.round(s.cloud/s.total*100):0;
+    html += `<div style="background:var(--bg4);border-radius:8px;padding:12px">
+      <div style="font-size:.78rem;font-weight:600;margin-bottom:6px">${lang}</div>
+      <div class="prog-label"><span>${s.cloud}/${s.total}</span><span>${p}%</span></div>
+      <div class="prog-wrap"><div class="prog-bar" style="width:${p}%"></div></div>
+    </div>`;
+  });
+  html += '</div>';
+  section.innerHTML = html;
+}
+
+async function startPosterSync() {
+  const btn = document.getElementById('syncPostersBtn');
+  const log = document.getElementById('syncLog');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing…';
+  log.style.display = 'block';
+  log.innerHTML = '<div class="log-line log-ok">Starting poster upload to Cloudinary…</div>';
+
+  try {
+    const r = await fetch(`${API_BASE}/sync/posters`,{method:'POST',headers:{'access_token':API_KEY,'Content-Length':'0'}});
+    const d = await r.json();
+    log.innerHTML += `<div class="log-line log-ok">✅ ${d.message}</div>`;
+    log.innerHTML += `<div class="log-line log-warn">⏳ Running in background — refresh stats in a few minutes</div>`;
+  } catch(e) {
+    log.innerHTML += `<div class="log-line log-err">❌ ${e.message}</div>`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fas fa-rotate"></i> Start Poster Upload';
+}
+
+async function searchMovieForImage() {
+  const q = document.getElementById('imgSearchMovie').value.toLowerCase().trim();
+  if(q.length < 2) return;
+  if(!allMovies.length) await loadMovies();
+  const matches = allMovies.filter(m=>m.title.toLowerCase().includes(q)).slice(0,20);
+  const sel = document.getElementById('imgMovieSelect');
+  sel.innerHTML = '<option value="">— select —</option>' +
+    matches.map(m=>`<option value="${m.id}" data-poster="${m.poster||''}" data-title="${esc(m.title)}">${esc(m.title)} (${m.language})</option>`).join('');
+  sel.onchange = () => {
+    const opt = sel.options[sel.selectedIndex];
+    const poster = opt.dataset.poster;
+    const el = document.getElementById('currentImgPreview');
+    if(poster) el.innerHTML = `<img src="${poster}" style="width:70px;height:105px;object-fit:cover;border-radius:6px;border:1px solid var(--border)" onerror="this.style.display='none'"/><div style="font-size:.72rem;color:var(--txt3);margin-top:4px">${poster.includes('cloudinary')?'✅ Cloudinary':'⚠️ External URL'}</div>`;
+    else el.innerHTML = '<div style="font-size:.78rem;color:var(--txt3)">No poster currently</div>';
+  };
+}
+
+function previewUploadImg(input) {
+  const f = input.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = e => { const el=document.getElementById('imgUploadPreview'); el.src=e.target.result; el.style.display='block'; };
+  r.readAsDataURL(f);
+}
+
+async function uploadImageForMovie() {
+  const sel   = document.getElementById('imgMovieSelect');
+  const movieId = sel.value;
+  if(!movieId) return alert('Select a movie first');
+  const fileInp = document.getElementById('imgUploadFile');
+  if(!fileInp.files[0]) return alert('Select an image file');
+
+  const prog  = document.getElementById('uploadProgress');
+  const bar   = document.getElementById('uploadBar');
+  const pct   = document.getElementById('uploadPct');
+  const result= document.getElementById('uploadResult');
+  prog.style.display='block'; result.innerHTML='';
+
+  // Simulate progress during upload
+  let p=0; const interval = setInterval(()=>{ p=Math.min(p+5,85); bar.style.width=p+'%'; pct.textContent=p+'%'; },200);
+
+  const fd = new FormData();
+  fd.append('file', fileInp.files[0]);
+  fd.append('movie_id', movieId);
+  fd.append('title', sel.options[sel.selectedIndex].dataset.title);
+  try {
+    const r = await fetch(`${API_BASE}/admin/upload-image-file`,{method:'POST',headers:{'access_token':API_KEY},body:fd});
+    const d = await r.json();
+    clearInterval(interval);
+    bar.style.width='100%'; pct.textContent='100%';
+    if(d.cloudinary_url) {
+      result.innerHTML=`<span style="color:var(--green)"><i class="fas fa-check"></i> Uploaded: ${d.cloudinary_url.slice(0,60)}…</span>`;
+      // Refresh movie list
+      await loadMovies();
+    } else { result.innerHTML=`<span style="color:var(--red)">${d.detail||'Upload failed'}</span>`; }
+  } catch(e) { clearInterval(interval); result.innerHTML=`<span style="color:var(--red)">${e.message}</span>`; }
+}
+
+async function removeMovieImage() {
+  const movieId = document.getElementById('imgMovieSelect').value;
+  if(!movieId) return alert('Select a movie first');
+  if(!confirm('Remove the poster for this movie?')) return;
+  const result = document.getElementById('removeResult');
+  try {
+    const r = await fetch(`${API_BASE}/admin/remove-image/${movieId}`,{method:'POST',headers:{'access_token':API_KEY,'Content-Length':'0'}});
+    const d = await r.json();
+    result.innerHTML = d.ok ? `<span style="color:var(--green)"><i class="fas fa-check"></i> Poster removed</span>` : `<span style="color:var(--red)">${d.detail||'Failed'}</span>`;
+  } catch(e) { result.innerHTML=`<span style="color:var(--red)">${e.message}</span>`; }
+}
+
+// ── Scraper ───────────────────────────────────────────────────────────────
+async function runScrape() {
+  const lang = document.getElementById('scrapeLanguage').value;
+  const el   = document.getElementById('scrapeResult');
+  el.style.display='block';
+  el.innerHTML='<div class="log-line log-warn"><i class="fas fa-spinner fa-spin"></i> Scraping '+lang+'… (may take 1–3 min)</div>';
+  try {
+    const r = await fetch(`${API_BASE}/sync/now?language=${encodeURIComponent(lang)}&max_movies=500&skip_posters=true`,{method:'POST',headers:{'access_token':API_KEY,'Content-Length':'0'}});
+    const d = await r.json();
+    el.innerHTML=`<div class="log-line log-ok">✅ ${lang}: scraped_raw=${d.scraped_raw} valid=${d.valid} saved=${d.saved} (${d.elapsed_sec}s)</div>`;
+    if(d.errors?.length) d.errors.forEach(e=>el.innerHTML+=`<div class="log-line log-err">⚠️ ${esc(e)}</div>`);
+    if(d.sample?.length) d.sample.forEach(s=>el.innerHTML+=`<div class="log-line" style="color:var(--txt2)">  → ${esc(s.title)}</div>`);
+  } catch(e) { el.innerHTML=`<div class="log-line log-err">❌ ${e.message}</div>`; }
+}
+
+async function runEnrich() {
+  const lang  = document.getElementById('enrichLanguage').value;
+  const batch = document.getElementById('enrichBatch').value;
+  const el    = document.getElementById('enrichResult');
+  el.style.display='block';
+  el.innerHTML='<div class="log-line log-warn"><i class="fas fa-spinner fa-spin"></i> Enriching '+lang+'… (may take a few min)</div>';
+  try {
+    const r = await fetch(`${API_BASE}/sync/details?language=${encodeURIComponent(lang)}&batch_size=${batch}`,{method:'POST',headers:{'access_token':API_KEY,'Content-Length':'0'}});
+    const d = await r.json();
+    el.innerHTML=`<div class="log-line log-ok">✅ ${lang}: enriched=${d.enriched} (${d.elapsed}s)</div>`;
+    if(d.errors?.length) d.errors.forEach(e=>el.innerHTML+=`<div class="log-line log-err">⚠️ ${esc(e)}</div>`);
+  } catch(e) { el.innerHTML=`<div class="log-line log-err">❌ ${e.message}</div>`; }
+}
+
+async function runCleanup(type) {
+  const el = document.getElementById('cleanupResult');
+  el.style.display='block';
+  el.innerHTML='<div class="log-line log-warn"><i class="fas fa-spinner fa-spin"></i> Running cleanup…</div>';
+  try {
+    const r = await fetch(`${API_BASE}/cleanup/${type}`,{method:'POST',headers:{'access_token':API_KEY,'Content-Length':'0'}});
+    const d = await r.json();
+    el.innerHTML=`<div class="log-line log-ok">✅ Removed ${d.deleted} records</div>`;
+  } catch(e) { el.innerHTML=`<div class="log-line log-err">❌ ${e.message}</div>`; }
+}
+
+function exportDB() {
+  const a = document.getElementById('exportLink');
+  // Open in new tab with auth header isn't possible for downloads
+  // So we create a link with the API key as query param (only for export)
+  window.open(`${API_BASE}/export?key=${encodeURIComponent(API_KEY)}`, '_blank');
+  return false;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
