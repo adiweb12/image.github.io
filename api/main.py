@@ -128,7 +128,7 @@ async def trigger_sync(
 @app.post("/sync/now", tags=["admin"])
 async def sync_now(
     language:     str  = Query("Malayalam", description="Single language to scrape"),
-    max_movies:   int  = Query(20, ge=1, le=100, description="Max movies to scrape (for testing)"),
+    max_movies:   int  = Query(100, ge=1, le=500, description="Max movies to scrape (for testing)"),
     skip_posters: bool = Query(True),
     _=Depends(verify_api_key),
 ):
