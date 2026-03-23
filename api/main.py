@@ -145,7 +145,9 @@ async def sync_now(
     logger.info(f"🔧 /sync/now called for language={language}")
 
     try:
-        raw = scrape_language(language, fetch_details=True)
+        # fetch_details=False → just titles/dates, no individual page visits
+        # This is MUCH faster (seconds not minutes) — details added in next sync
+        raw = scrape_language(language, fetch_details=False)
     except Exception as e:
         logger.error(f"Scrape error: {e}")
         return JSONResponse(status_code=500, content={"error": str(e), "movies": []})
@@ -182,6 +184,81 @@ async def sync_now(
         "errors":       errors[:10],
         "elapsed_sec":  elapsed,
         "sample":       sample,
+    }
+
+
+@app.post("/sync/details", tags=["admin"])
+async def sync_details_now(
+    language:   str = Query("Malayalam"),
+    batch_size: int = Query(20, ge=1, le=50),
+    _=Depends(verify_api_key),
+):
+    """
+    Enrich existing movies with director/cast/description/poster by visiting
+    individual Wikipedia pages. Run AFTER /sync/now has populated basic data.
+    Does batch_size movies at a time to avoid timeouts.
+    """
+    import time
+    from scrapers.wiki_scraper import _fetch_movie_details, WIKI_BASE
+    from scrapers.session import make_session, jitter_sleep
+    from db import SessionLocal, MovieDB
+
+    start = time.time()
+    db    = SessionLocal()
+    done  = 0
+    errors = []
+
+    try:
+        # Find movies missing description or director
+        movies = (
+            db.query(MovieDB)
+            .filter(MovieDB.language.ilike(f"%{language}%"))
+            .filter(
+                (MovieDB.description == None) |
+                (MovieDB.description == "") |
+                (MovieDB.director == None) |
+                (MovieDB.director == "")
+            )
+            .limit(batch_size)
+            .all()
+        )
+
+        logger.info(f"🔍 Enriching {len(movies)} {language} movies…")
+        session = make_session()
+
+        for movie in movies:
+            if not movie.wiki_url:
+                continue
+            try:
+                details = _fetch_movie_details(session, movie.wiki_url, movie.title)
+                if details.get("director"):    movie.director    = details["director"]
+                if details.get("description"): movie.description = details["description"][:1000]
+                if details.get("cast"):        movie.cast        = details["cast"]
+                if details.get("genre"):       movie.genre       = details["genre"]
+                if details.get("release_date"): movie.release_date = details["release_date"]
+                if details.get("poster_url") and not movie.poster:
+                    from utils.cloudinary_utils import upload_poster_from_url
+                    movie.poster = upload_poster_from_url(details["poster_url"], movie.title) or details["poster_url"]
+                    movie.poster_synced = True
+                db.flush()
+                done += 1
+                jitter_sleep(0.3, 0.8)
+            except Exception as e:
+                db.rollback()
+                errors.append(f"{movie.title}: {str(e)[:100]}")
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        errors.append(str(e))
+    finally:
+        db.close()
+
+    return {
+        "language": language,
+        "enriched": done,
+        "errors":   errors[:5],
+        "elapsed":  round(time.time() - start, 1),
     }
 
 
