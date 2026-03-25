@@ -500,19 +500,42 @@ const PAGE = 50;
 async function doLogin() {
   const key = document.getElementById('apiKeyInput').value.trim();
   if (!key) return;
+
+  const btn = document.querySelector('.auth-card .btn');
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying…';
+  btn.disabled  = true;
+
   try {
-    const r = await fetch(`${API_BASE}/health`);
-    const d = await r.json();
-    if (d.status !== 'ok') throw new Error('Service not ready');
-    // Verify key
-    const r2 = await fetch(`${API_BASE}/movies/count`, {headers:{'access_token':key}});
-    if (r2.status === 403) { showAuthErr('Invalid API key'); return; }
+    // Verify API key against /movies/count (requires auth)
+    const r = await fetch(`${API_BASE}/movies/count`, {
+      headers: { 'access_token': key }
+    });
+    if (r.status === 403) {
+      showAuthErr('Invalid API key — check your SYNC_API_KEY');
+      btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
+      btn.disabled  = false;
+      return;
+    }
+    if (!r.ok && r.status !== 200) {
+      // Service might be waking up — still let in if key looks valid
+      // (count endpoint will 403 on bad key, 503/504 on cold start)
+      if (r.status === 503 || r.status === 504 || r.status === 502) {
+        showAuthErr('Service waking up (Render cold start) — try again in 30s');
+        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
+        btn.disabled  = false;
+        return;
+      }
+    }
+    // Login success
     API_KEY = key;
     document.getElementById('authGate').style.display = 'none';
     document.getElementById('app').style.display      = 'flex';
     loadDashboard();
-    startDashAutoRefresh();
-  } catch(e) { showAuthErr(e.message); }
+  } catch(e) {
+    showAuthErr(e.message + ' — is the service running?');
+    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
+    btn.disabled  = false;
+  }
 }
 function showAuthErr(msg) {
   const el = document.getElementById('authError');
