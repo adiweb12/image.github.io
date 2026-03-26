@@ -504,37 +504,39 @@ async function doLogin() {
   const btn = document.querySelector('.auth-card .btn');
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying…';
   btn.disabled  = true;
+  document.getElementById('authError').style.display = 'none';
 
   try {
-    // Verify API key against /movies/count (requires auth)
     const r = await fetch(`${API_BASE}/movies/count`, {
       headers: { 'access_token': key }
     });
+
     if (r.status === 403) {
-      showAuthErr('Invalid API key — check your SYNC_API_KEY');
+      showAuthErr('Invalid API key');
       btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
-      btn.disabled  = false;
+      btn.disabled = false;
       return;
     }
-    if (!r.ok && r.status !== 200) {
-      // Service might be waking up — still let in if key looks valid
-      // (count endpoint will 403 on bad key, 503/504 on cold start)
-      if (r.status === 503 || r.status === 504 || r.status === 502) {
-        showAuthErr('Service waking up (Render cold start) — try again in 30s');
-        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
-        btn.disabled  = false;
-        return;
-      }
-    }
-    // Login success
+
+    // Any non-403 response (200, 502, 503) = key accepted, service may be warming up
     API_KEY = key;
     document.getElementById('authGate').style.display = 'none';
-    document.getElementById('app').style.display      = 'flex';
+    document.getElementById('app').style.display = 'flex';
     loadDashboard();
+
   } catch(e) {
-    showAuthErr(e.message + ' — is the service running?');
-    btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
-    btn.disabled  = false;
+    // Network error = service cold-starting, but key might still be valid
+    // Let user in anyway — dashboard will show error if service is down
+    if (key.length >= 8) {
+      API_KEY = key;
+      document.getElementById('authGate').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      loadDashboard();
+    } else {
+      showAuthErr('Cannot reach service: ' + e.message);
+      btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Enter';
+      btn.disabled = false;
+    }
   }
 }
 function showAuthErr(msg) {
